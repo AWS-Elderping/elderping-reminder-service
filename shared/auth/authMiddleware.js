@@ -1,4 +1,4 @@
-// authMiddleware.js
+﻿// authMiddleware.js
 // Shared middleware logic for authentication, role mapping, permissions checking, and relationship verification
 
 const jwt = require('jsonwebtoken');
@@ -76,7 +76,8 @@ const validateToken = (req, res, next) => {
         username: decoded['cognito:username'] || decoded.username,
         role: mapRole(rawRole),
         rawRole: rawRole, // preserve original role
-        email: decoded.email
+        email: decoded.email,
+        linkedElders: decoded.linkedElders || []
       };
       next();
     });
@@ -91,7 +92,8 @@ const validateToken = (req, res, next) => {
         username: decoded.username,
         role: mapRole(rawRole),
         rawRole: rawRole, // preserve original role
-        email: decoded.email
+        email: decoded.email,
+        linkedElders: decoded.linkedElders || []
       };
       next();
     } catch (err) {
@@ -167,36 +169,26 @@ const checkRelationship = (elderIdParam = 'elderId') => {
 
     // Caregiver (CAREGIVER) must verify association links
     if (role === 'CAREGIVER') {
-      try {
-        const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
-        let linked = false;
+      // Check linked elders embedded in JWT (set at login time by auth-service)
+      const linkedElders = req.user.linkedElders || [];
+      if (linkedElders.map(String).includes(String(elderId))) {
+        return next();
+      }
 
-        if (process.env.DB_NAME === 'users_db' && pool) {
-          // If in auth-service, check table directly
+      // Fallback: direct DB check (only when on the same DB as auth-service)
+      if ((process.env.DB_NAME === 'users_db' || process.env.DB_NAME === 'users_db_dev') && pool) {
+        try {
           const result = await pool.query(
             'SELECT 1 FROM family_links WHERE family_id = $1 AND elder_id = $2',
             [userId, elderId]
           );
-          linked = result.rows.length > 0;
-        } else {
-          // Cross-service call to auth-service verification route
-          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-          const response = await fetch(`${authServiceUrl}/links/verify/${userId}/${elderId}`);
-          if (response.ok) {
-            const data = await response.json();
-            linked = data.linked;
-          }
+          if (result.rows.length > 0) return next();
+        } catch (err) {
+          console.error('Relationship DB check error:', err.message);
         }
-
-        if (linked) {
-          next();
-        } else {
-          res.status(403).json({ error: 'Forbidden: You are not linked to this elder' });
-        }
-      } catch (err) {
-        console.error('Relationship validation error:', err.message);
-        res.status(500).json({ error: 'Failed to verify relationship' });
       }
+
+      res.status(403).json({ error: 'Forbidden: You are not linked to this elder' });
     } else {
       res.status(403).json({ error: 'Forbidden: Invalid role' });
     }

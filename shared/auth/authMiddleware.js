@@ -189,9 +189,29 @@ const checkRelationship = (elderIdParam = 'elderId') => {
       }
 
       res.status(403).json({ error: 'Forbidden: You are not linked to this elder' });
-    } else {
-      res.status(403).json({ error: 'Forbidden: Invalid role' });
+      return;
     }
+
+    // Doctor must verify a doctor_patient_links assignment (cross-service call - this
+    // service never holds the users_db pool, and doctors' assigned patients are not
+    // embedded in the JWT)
+    if (role === 'DOCTOR') {
+      try {
+        const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://auth-service:3000';
+        const response = await fetch(`${authServiceUrl}/doctor-links/verify/${userId}/${elderId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.linked) return next();
+        }
+        res.status(403).json({ error: 'Forbidden: You are not assigned to this patient' });
+      } catch (err) {
+        console.error('Relationship validation error:', err.message);
+        res.status(500).json({ error: 'Failed to verify relationship' });
+      }
+      return;
+    }
+
+    res.status(403).json({ error: 'Forbidden: Invalid role' });
   };
 };
 

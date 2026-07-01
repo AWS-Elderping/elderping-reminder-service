@@ -19,7 +19,6 @@ const pool = new Pool({
 const logAudit = async (req, actionType, resource, resourceId, status, message) => {
   try {
     const auditServiceUrl = process.env.AUDIT_SERVICE_URL || 'http://audit-service:3000';
-    const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
     await fetch(`${auditServiceUrl}/audit`, {
       method: 'POST',
       headers: {
@@ -101,7 +100,6 @@ app.put('/reminders/:id/take', validateToken, async (req, res) => {
     } else if (req.user.role === 'USER' || req.user.role === 'ELDER') {
       allowed = String(req.user.id || req.user.userId) === String(reminder.user_id);
     } else if (req.user.role === 'CAREGIVER' || req.user.role === 'FAMILY') {
-      const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
       const response = await fetch(`${authServiceUrl}/links/verify/${req.user.id || req.user.userId}/${reminder.user_id}`);
       if (response.ok) {
         const data = await response.json();
@@ -142,7 +140,6 @@ app.put('/reminders/:id/take', validateToken, async (req, res) => {
           // Send low stock notification via notification-service (Event-driven Alert)
           try {
             const notifServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3000';
-            const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
             await fetch(`${notifServiceUrl}/notifications/trigger`, {
               method: 'POST',
               headers: {
